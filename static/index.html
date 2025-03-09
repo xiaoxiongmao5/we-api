@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSE Stream Example</title>
+</head>
+<body>
+    <h1>SSE Stream Example</h1>
+    <div id="message-container"></div>
+
+    <script>
+        const messageContainer = document.getElementById('message-container');
+        const eventSource = new EventSource('http://localhost:8080/stream'); // 连接到 /stream 接口
+
+        eventSource.onmessage = function(event) {
+            const message = event.data;
+            console.log("Received message:", message);
+            const messageElement = document.createElement('p');
+            messageElement.textContent = message;
+            messageContainer.appendChild(messageElement);
+        };
+
+        eventSource.onerror = function(error) {
+            console.error("EventSource failed:", error);
+            eventSource.close(); // 关闭连接，避免重试风暴
+        };
+
+        eventSource.onopen = function(event) {
+            console.log("SSE connection opened");
+        };
+
+        // 可选：监听连接关闭事件
+        // eventSource.onclose = function(event) {
+        //     console.log("SSE connection closed");
+        // };
+
+        // 可选：在页面卸载时关闭连接
+        window.onbeforeunload = function() {
+            eventSource.close();
+        };
+    </script>
+</body>
+</html>
