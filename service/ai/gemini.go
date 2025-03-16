@@ -22,27 +22,22 @@ func NewGeminiSvr(ctx context.Context) *GeminiSvr {
 	}
 }
 
-type Part struct {
+type GeminiPart struct {
 	Text string `json:"text"`
 }
-type Content struct {
-	Role  string `json:"role"`
-	Parts []Part `json:"parts"`
+type GeminiContent struct {
+	Role  string       `json:"role"`
+	Parts []GeminiPart `json:"parts"`
 }
 type GeminiReq struct {
-	Contents []Content `json:"contents"`
+	Contents []GeminiContent `json:"contents"`
 }
 
 type GeminiRes struct {
 	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-			Role string `json:"role"`
-		} `json:"content"`
-		FinishReason string  `json:"finishReason"`
-		AvgLogprobs  float64 `json:"avgLogprobs"`
+		Content      GeminiContent `json:"content"`
+		FinishReason string        `json:"finishReason"`
+		AvgLogprobs  float64       `json:"avgLogprobs"`
 	} `json:"candidates"`
 	UsageMetadata struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
@@ -60,7 +55,7 @@ type GeminiRes struct {
 	ModelVersion string `json:"modelVersion"`
 }
 
-func (o *GeminiSvr) Do(req OpenAiReq) (*OpenAiRes[Choice], error) {
+func (o *GeminiSvr) Do(req OpenAiReq) (*OpenAiRes[OpenAiChoice], error) {
 	stream := "generateContent" //非流式传输
 	if req.Stream {
 		stream = "streamGenerateContent" //流式传输
@@ -85,16 +80,16 @@ func (o *GeminiSvr) Do(req OpenAiReq) (*OpenAiRes[Choice], error) {
 	return resOpenAi, nil
 }
 
-func (o *GeminiSvr) DoStream(req OpenAiReq, resChan chan *OpenAiRes[ChoiceStream], errChan chan error) {
+func (o *GeminiSvr) DoStream(req OpenAiReq, resChan chan *OpenAiRes[OpenAiChoiceStream], errChan chan error) {
 	stream := "generateContent" //非流式传输
 	if req.Stream {
 		stream = "streamGenerateContent" //流式传输
 	}
 	apikey := strings.Replace(req.AuthHeader, "Bearer ", "", 1)
 	url := fmt.Sprintf("/v1beta/models/%s:%s?key=%s&alt=sse", req.Model, stream, apikey)
-	reqGemini := o.trans2GeminiReq(req)
+	myReq := o.trans2GeminiReq(req)
 	data := map[string]interface{}{
-		"contents": reqGemini.Contents,
+		"contents": myReq.Contents,
 	}
 
 	myChan := make(chan *GeminiRes)
@@ -114,63 +109,65 @@ func (o *GeminiSvr) DoStream(req OpenAiReq, resChan chan *OpenAiRes[ChoiceStream
 }
 
 func (o *GeminiSvr) trans2GeminiReq(req OpenAiReq) *GeminiReq {
-	geminiReq := &GeminiReq{}
+	myReq := &GeminiReq{}
 	for _, v := range req.Messages {
-		content := Content{
+		content := GeminiContent{
 			Role:  v["role"],
-			Parts: []Part{},
+			Parts: []GeminiPart{},
 		}
-		content.Parts = append(content.Parts, Part{Text: v["content"]})
+		content.Parts = append(content.Parts, GeminiPart{Text: v["content"]})
 
-		geminiReq.Contents = append(geminiReq.Contents, content)
+		myReq.Contents = append(myReq.Contents, content)
 	}
-	return geminiReq
+	return myReq
 }
 
-func (o *GeminiSvr) trans2OpenAiRes(res *GeminiRes) *OpenAiRes[Choice] {
-	openAiRes := &OpenAiRes[Choice]{
+func (o *GeminiSvr) trans2OpenAiRes(res *GeminiRes) *OpenAiRes[OpenAiChoice] {
+	result := &OpenAiRes[OpenAiChoice]{
 		Model: res.ModelVersion,
+		Usage: OpenAiUsage{
+			PromptTokens:     res.UsageMetadata.PromptTokenCount,
+			CompletionTokens: res.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      res.UsageMetadata.TotalTokenCount,
+		},
+		Choices: []OpenAiChoice{},
 	}
+
 	for _, v := range res.Candidates {
-		choice := Choice{
+		result.Choices = append(result.Choices, OpenAiChoice{
+			FinishReason: v.FinishReason,
+			Message: OpenAiMessage{
+				Role:    v.Content.Role,
+				Content: v.Content.Parts[0].Text,
+			},
+		})
+	}
+
+	return result
+}
+
+func (o *GeminiSvr) trans2OpenAiStreamRes(res *GeminiRes) *OpenAiRes[OpenAiChoiceStream] {
+	result := &OpenAiRes[OpenAiChoiceStream]{
+		Model: res.ModelVersion,
+		Usage: OpenAiUsage{
+			PromptTokens:     res.UsageMetadata.PromptTokenCount,
+			CompletionTokens: res.UsageMetadata.CandidatesTokenCount,
+			TotalTokens:      res.UsageMetadata.TotalTokenCount,
+		},
+		Choices: []OpenAiChoiceStream{},
+	}
+
+	for _, v := range res.Candidates {
+		choice := OpenAiChoiceStream{
 			Index:        0,
 			FinishReason: v.FinishReason,
-			Message: Message{
+			Message: OpenAiMessage{
 				Role:    v.Content.Role,
 				Content: v.Content.Parts[0].Text,
 			},
 		}
-		openAiRes.Choices = append(openAiRes.Choices, choice)
+		result.Choices = append(result.Choices, choice)
 	}
-	usageMetadata := res.UsageMetadata
-	openAiRes.Usage = Usage{
-		PromptTokens:     usageMetadata.PromptTokenCount,
-		CompletionTokens: usageMetadata.CandidatesTokenCount,
-		TotalTokens:      usageMetadata.TotalTokenCount,
-	}
-	return openAiRes
-}
 
-func (o *GeminiSvr) trans2OpenAiStreamRes(res *GeminiRes) *OpenAiRes[ChoiceStream] {
-	openAiRes := &OpenAiRes[ChoiceStream]{
-		Model: res.ModelVersion,
-	}
-	for _, v := range res.Candidates {
-		choice := ChoiceStream{
-			Index:        0,
-			FinishReason: v.FinishReason,
-			Message: Message{
-				Role:    v.Content.Role,
-				Content: v.Content.Parts[0].Text,
-			},
-		}
-		openAiRes.Choices = append(openAiRes.Choices, choice)
-	}
-	usageMetadata := res.UsageMetadata
-	openAiRes.Usage = Usage{
-		PromptTokens:     usageMetadata.PromptTokenCount,
-		CompletionTokens: usageMetadata.CandidatesTokenCount,
-		TotalTokens:      usageMetadata.TotalTokenCount,
-	}
-	return openAiRes
+	return result
 }
