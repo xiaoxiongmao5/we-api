@@ -23,12 +23,19 @@ func NewClaudeSvr(ctx context.Context) *ClaudeSvr {
 }
 
 type ClaudeReq struct {
-	AuthHeader  string              `json:"-"`
-	Model       string              `json:"model"`
-	Messages    []map[string]string `json:"messages"`
-	MaxTokens   int                 `json:"max_tokens"`
-	Temperature float64             `json:"temperature"`
-	Stream      bool                `json:"stream"`
+	AuthHeader       string              `json:"-"`
+	Model            string              `json:"model"`
+	Messages         []map[string]string `json:"messages"`
+	Temperature      float64             `json:"temperature"`
+	TopP             float64             `json:"top_p"`
+	N                int                 `json:"n"`
+	Stream           bool                `json:"stream"`
+	Stop             string              `json:"stop"`
+	MaxTokens        int                 `json:"max_tokens"`
+	PresencePenalty  int                 `json:"presence_penalty"`
+	FrequencyPenalty int                 `json:"frequency_penalty"`
+	LogitBias        string              `json:"logit_bias"`
+	User             string              `json:"user"`
 }
 
 type ClaudeDelta struct {
@@ -94,25 +101,41 @@ type ClaudeStreamResDataMessageDelta struct {
 	}
 }
 
-func (o *ClaudeSvr) Do(req OpenAiReq) (*OpenAiRes[OpenAiChoice], error) {
-	data := map[string]interface{}{
-		"model":      req.Model,
-		"max_tokens": req.MaxTokens,
-		"messages":   req.Messages,
-		"stream":     req.Stream,
+func (o *ClaudeSvr) getFetchOpts(req OpenAiReq) request.FetchOpts {
+	myReq := ClaudeReq{
+		Model:            req.Model,
+		Messages:         req.Messages,
+		Temperature:      req.Temperature,
+		TopP:             req.TopP,
+		N:                req.N,
+		Stream:           req.Stream,
+		Stop:             req.Stop,
+		MaxTokens:        req.MaxTokens,
+		PresencePenalty:  req.PresencePenalty,
+		FrequencyPenalty: req.FrequencyPenalty,
+		LogitBias:        req.LogitBias,
+		User:             req.User,
 	}
+
 	apikey := strings.Replace(req.AuthHeader, "Bearer ", "", 1)
 	headers := map[string]string{
 		"x-api-key":         apikey,
 		"anthropic-version": "2023-06-01", //time.Now().Format("2006-01-02"),
 	}
-	res, err := request.Fetch[ClaudeRes](request.FetchOpts{
-		Host:    "https://poloai.top",
-		Url:     "/v1/messages",
-		Method:  "POST",
-		Data:    data,
-		Headers: headers,
-	})
+
+	return request.FetchOpts{
+		Host:     "https://poloai.top",
+		Url:      "/v1/messages",
+		Method:   "POST",
+		PostData: myReq,
+		Headers:  headers,
+	}
+}
+
+func (o *ClaudeSvr) Do(req OpenAiReq) (*OpenAiRes[OpenAiChoice], error) {
+	fetchOpts := o.getFetchOpts(req)
+
+	res, err := request.Fetch[ClaudeRes](fetchOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -122,28 +145,11 @@ func (o *ClaudeSvr) Do(req OpenAiReq) (*OpenAiRes[OpenAiChoice], error) {
 }
 
 func (o *ClaudeSvr) DoStream(req OpenAiReq, resChan chan *OpenAiRes[OpenAiChoiceStream], errChan chan error) {
-	myReq := o.trans2ClaudeReq(req)
-	data := map[string]interface{}{
-		"model":      myReq.Model,
-		"max_tokens": myReq.MaxTokens,
-		"stream":     myReq.Stream,
-		"messages":   myReq.Messages,
-	}
-	apikey := strings.Replace(req.AuthHeader, "Bearer ", "", 1)
-	headers := map[string]string{
-		"x-api-key":         apikey,
-		"anthropic-version": "2023-06-01", //time.Now().Format("2006-01-02"),
-	}
+	fetchOpts := o.getFetchOpts(req)
 
 	myChan := make(chan []byte)
 	go func() {
-		request.FetchStreamBase(request.FetchOpts{
-			Host:    "https://poloai.top",
-			Url:     "/v1/messages",
-			Method:  "POST",
-			Data:    data,
-			Headers: headers,
-		}, myChan, errChan)
+		request.FetchStreamBase(fetchOpts, myChan, errChan)
 	}()
 
 	one := &ClaudeRes{
@@ -202,16 +208,6 @@ func (o *ClaudeSvr) DoStream(req OpenAiReq, resChan chan *OpenAiRes[OpenAiChoice
 			}
 		}
 	}
-}
-
-func (o *ClaudeSvr) trans2ClaudeReq(req OpenAiReq) *ClaudeReq {
-	myReq := &ClaudeReq{
-		Model:     req.Model,
-		MaxTokens: req.MaxTokens,
-		Messages:  req.Messages,
-		Stream:    req.Stream,
-	}
-	return myReq
 }
 
 func (o *ClaudeSvr) trans2OpenAiRes(res *ClaudeRes) *OpenAiRes[OpenAiChoice] {

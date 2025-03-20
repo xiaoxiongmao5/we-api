@@ -18,11 +18,15 @@ import (
 )
 
 type FetchOpts struct {
-	Host    string                 `json:"host"`
-	Url     string                 `json:"url"`
-	Method  string                 `json:"method"`
-	Data    map[string]interface{} `json:"data"`
-	Headers map[string]string      `json:"headers"`
+	Host     string                 `json:"host"`
+	Url      string                 `json:"url"`
+	Method   string                 `json:"method"`
+	Data     map[string]interface{} `json:"data"`
+	GetData  map[string]interface{} `json:"get_data"`
+	PostData any                    `json:"post_data"`
+	Headers  map[string]string      `json:"headers"`
+	// NeedTmOut bool                   `json:"-"`
+	// TmOut     time.Duration          `json:"-"`
 }
 
 func Fetch[T interface{}](reqOpts FetchOpts) (*T, error) {
@@ -34,7 +38,8 @@ func Fetch[T interface{}](reqOpts FetchOpts) (*T, error) {
 	logger.Info("request params",
 		xlog.String("uri", uri),
 		xlog.String("method", reqOpts.Method),
-		xlog.Any("data", reqOpts.Data))
+		xlog.Any("get_data", reqOpts.GetData),
+		xlog.Any("post_data", reqOpts.PostData))
 
 	reqIns := xresty.New().SetTimeout(10 * time.Second).R()
 
@@ -47,16 +52,15 @@ func Fetch[T interface{}](reqOpts FetchOpts) (*T, error) {
 		}
 	}
 
-	if reqOpts.Method == "GET" {
-		converted := mapInterfaceToMapString(reqOpts.Data)
-
+	if len(reqOpts.GetData) > 0 {
+		converted := mapInterfaceToMapString(reqOpts.GetData)
 		reqIns.SetQueryParams(converted)
 	}
 
 	if reqOpts.Method == "POST" {
-		jsonData, err := json.Marshal(reqOpts.Data)
+		jsonData, err := json.Marshal(reqOpts.PostData)
 		if err != nil {
-			logger.Error("json.Marshal(reqOpts.Data) error", xlog.Err(err))
+			logger.Error("json.Marshal(reqOpts.PostData) error", xlog.Err(err))
 			return nil, err
 		}
 
@@ -121,7 +125,8 @@ func FetchStream[T interface{}](reqOpts FetchOpts, resChan chan *T, errChan chan
 	logger.Info("request params",
 		xlog.String("uri", uri),
 		xlog.String("method", reqOpts.Method),
-		xlog.Any("data", reqOpts.Data))
+		xlog.Any("get_data", reqOpts.GetData),
+		xlog.Any("post_data", reqOpts.PostData))
 
 	reqIns := xresty.New().R().
 		SetDoNotParseResponse(true) // 禁止自动解析
@@ -135,16 +140,15 @@ func FetchStream[T interface{}](reqOpts FetchOpts, resChan chan *T, errChan chan
 		}
 	}
 
-	if reqOpts.Method == "GET" {
-		converted := mapInterfaceToMapString(reqOpts.Data)
-
+	if len(reqOpts.GetData) > 0 {
+		converted := mapInterfaceToMapString(reqOpts.GetData)
 		reqIns.SetQueryParams(converted)
 	}
 
 	if reqOpts.Method == "POST" {
-		jsonData, err := json.Marshal(reqOpts.Data)
+		jsonData, err := json.Marshal(reqOpts.PostData)
 		if err != nil {
-			logger.Error("json.Marshal(reqOpts.Data) error", xlog.Err(err))
+			logger.Error("json.Marshal(reqOpts.PostData) error", xlog.Err(err))
 			return
 		}
 
@@ -236,7 +240,8 @@ func FetchStreamBase(reqOpts FetchOpts, resChan chan []byte, errChan chan error)
 	logger.Info("request params",
 		xlog.String("uri", uri),
 		xlog.String("method", reqOpts.Method),
-		xlog.Any("data", reqOpts.Data))
+		xlog.Any("get_data", reqOpts.GetData),
+		xlog.Any("post_data", reqOpts.PostData))
 
 	reqIns := xresty.New().R().
 		SetDoNotParseResponse(true) // 禁止自动解析
@@ -250,16 +255,15 @@ func FetchStreamBase(reqOpts FetchOpts, resChan chan []byte, errChan chan error)
 		}
 	}
 
-	if reqOpts.Method == "GET" {
-		converted := mapInterfaceToMapString(reqOpts.Data)
-
+	if len(reqOpts.GetData) > 0 {
+		converted := mapInterfaceToMapString(reqOpts.GetData)
 		reqIns.SetQueryParams(converted)
 	}
 
 	if reqOpts.Method == "POST" {
-		jsonData, err := json.Marshal(reqOpts.Data)
+		jsonData, err := json.Marshal(reqOpts.PostData)
 		if err != nil {
-			logger.Error("json.Marshal(reqOpts.Data) error", xlog.Err(err))
+			logger.Error("json.Marshal(reqOpts.PostData) error", xlog.Err(err))
 			return
 		}
 

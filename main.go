@@ -19,6 +19,8 @@ func GetAiSvr(ctx context.Context, model string) ai.DoCompletions {
 		return ai.NewOpenAiSvr(ctx)
 	case "gemini-2.0-flash-exp":
 		return ai.NewGeminiSvr(ctx)
+	case "claude-3-5-sonnet-20241022":
+		return ai.NewClaudeSvr(ctx)
 	default:
 		return ai.NewOpenAiSvr(ctx)
 	}
@@ -36,7 +38,7 @@ func completions(c *gin.Context) {
 	authorization := c.Request.Header.Get("Authorization")
 	req.AuthHeader = authorization
 	if req.Stream {
-		resChan := make(chan *ai.OpenAiRes[ai.ChoiceStream])
+		resChan := make(chan *ai.OpenAiRes[ai.OpenAiChoiceStream])
 		errChan := make(chan error)
 		go func() {
 			svr.DoStream(req, resChan, errChan)
@@ -56,7 +58,7 @@ func completions(c *gin.Context) {
 func jsonRender(c *gin.Context, stateCode int, data interface{}) {
 	c.JSON(stateCode, data)
 }
-func streamRender(c *gin.Context, resChan chan *ai.OpenAiRes[ai.ChoiceStream], errChan chan error) {
+func streamRender(c *gin.Context, resChan chan *ai.OpenAiRes[ai.OpenAiChoiceStream], errChan chan error) {
 	// 设置响应头部，关键是 Content-Type: text/event-stream
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
